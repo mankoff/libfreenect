@@ -1,0 +1,367 @@
+/*
+ * This file is part of the OpenKinect Project. http://www.openkinect.org
+ *
+ * Copyright (c) 2010 individual OpenKinect contributors. See the CONTRIB file
+ * for details.
+ *
+ * This code is licensed to you under the terms of the Apache License, version
+ * 2.0, or, at your option, the terms of the GNU General Public License,
+ * version 2.0. See the APACHE20 and GPL2 files for the text of the licenses,
+ * or the following URLs:
+ * http://www.apache.org/licenses/LICENSE-2.0
+ * http://www.gnu.org/licenses/gpl-2.0.txt
+ *
+ * If you redistribute this file in source form, modified or unmodified, you
+ * may:
+ *   1) Leave this header intact and distribute it under the same terms,
+ *      accompanying it with the APACHE20 and GPL20 files, or
+ *   2) Delete the Apache 2.0 clause and accompany it with the GPL2 file, or
+ *   3) Delete the GPL v2 clause and accompany it with the APACHE20 file
+ * In all cases you must keep the copyright notice intact and include a copy
+ * of the CONTRIB file.
+ *
+ * Binary distributions must follow the binary distribution requirements of
+ * either License.
+ */
+
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <assert.h>
+#include <sys/time.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include "libfreenect.h"
+
+#include <pthread.h>
+
+#if defined(__APPLE__)
+#include <GLUT/glut.h>
+#include <OpenGL/gl.h>
+#include <OpenGL/glu.h>
+#else
+#include <GL/glut.h>
+#include <GL/gl.h>
+#include <GL/glu.h>
+#endif
+
+#include <math.h>
+
+pthread_t freenect_thread;
+volatile int die = 0;
+
+int g_argc;
+char **g_argv;
+
+int window;
+
+char *out_dir=0;
+uint32_t last_timestamp = 0;
+#define FREENECT_FRAME_W 640
+#define FREENECT_FRAME_H 480
+
+pthread_mutex_t gl_backbuf_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+// back: owned by libfreenect (implicit for depth)
+// mid: owned by callbacks, "latest frame ready"
+// front: owned by GL, "currently being drawn"
+uint8_t *depth_mid, *depth_front;
+
+GLuint gl_depth_tex;
+
+freenect_context *f_ctx;
+freenect_device *f_dev;
+int freenect_angle = 0;
+int freenect_led;
+
+pthread_cond_t gl_frame_cond = PTHREAD_COND_INITIALIZER;
+int got_depth = 0;
+
+void DrawGLScene()
+{
+	pthread_mutex_lock(&gl_backbuf_mutex);
+
+	while (!got_depth ) {
+		pthread_cond_wait(&gl_frame_cond, &gl_backbuf_mutex);
+	}
+
+	uint8_t *tmp;
+
+	if (got_depth) {
+		tmp = depth_front;
+		depth_front = depth_mid;
+		depth_mid = tmp;
+		got_depth = 0;
+	}
+
+	pthread_mutex_unlock(&gl_backbuf_mutex);
+
+	glBindTexture(GL_TEXTURE_2D, gl_depth_tex);
+	glTexImage2D(GL_TEXTURE_2D, 0, 3, 640, 480, 0, GL_RGB, GL_UNSIGNED_BYTE, depth_front);
+
+	glBegin(GL_TRIANGLE_FAN);
+	glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+	glTexCoord2f(0, 0); glVertex3f(0,0,0);
+	glTexCoord2f(1, 0); glVertex3f(640,0,0);
+	glTexCoord2f(1, 1); glVertex3f(640,480,0);
+	glTexCoord2f(0, 1); glVertex3f(0,480,0);
+	glEnd();
+
+	glutSwapBuffers();
+}
+
+void keyPressed(unsigned char key, int x, int y)
+{
+	if (key == 27) {
+		die = 1;
+		pthread_join(freenect_thread, NULL);
+		glutDestroyWindow(window);
+		free(depth_mid);
+		free(depth_front);
+		// Not pthread_exit because OSX leaves a thread lying around and doesn't exit
+		exit(0);
+	}
+}
+
+void ReSizeGLScene(int Width, int Height)
+{
+	glViewport(0,0,Width,Height);
+	glMatrixMode(GL_PROJECTION);
+	glLoadIdentity();
+	glOrtho (0, 640, 480, 0, -1.0f, 1.0f);
+	glMatrixMode(GL_MODELVIEW);
+    glLoadIdentity();
+}
+
+void InitGL(int Width, int Height)
+{
+	glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+	glClearDepth(1.0);
+	glDepthFunc(GL_LESS);
+    glDepthMask(GL_FALSE);
+	glDisable(GL_DEPTH_TEST);
+	glDisable(GL_BLEND);
+    glDisable(GL_ALPHA_TEST);
+    glEnable(GL_TEXTURE_2D);
+	glBlendFunc (GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	glShadeModel(GL_FLAT);
+
+	glGenTextures(1, &gl_depth_tex);
+	glBindTexture(GL_TEXTURE_2D, gl_depth_tex);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+	ReSizeGLScene(Width, Height);
+}
+
+void *gl_threadfunc(void *arg)
+{
+	printf("GL thread\n");
+
+	glutInit(&g_argc, g_argv);
+
+	glutInitDisplayMode(GLUT_RGBA | GLUT_DOUBLE | GLUT_ALPHA | GLUT_DEPTH);
+	glutInitWindowSize(640, 480);
+	glutInitWindowPosition(0, 0);
+
+	window = glutCreateWindow("LibFreenect");
+
+	glutDisplayFunc(&DrawGLScene);
+	glutIdleFunc(&DrawGLScene);
+	glutReshapeFunc(&ReSizeGLScene);
+	glutKeyboardFunc(&keyPressed);
+
+	InitGL(640, 480);
+
+	glutMainLoop();
+
+	return NULL;
+}
+
+double get_time()
+{
+	struct timeval cur;
+	gettimeofday(&cur, NULL);
+	return cur.tv_sec + cur.tv_usec / 1000000.;
+}
+
+
+FILE *open_dump(char type, double cur_time, uint32_t timestamp, int data_size, const char *extension)
+{
+  char *fn = malloc(strlen(out_dir) + 50);
+  sprintf(fn, "%c-%f-%u.%s", type, cur_time, timestamp, extension);
+  sprintf(fn, "%s/%c-%f-%u.%s", out_dir, type, cur_time, timestamp, extension);
+  FILE* fp = fopen(fn, "wb");
+  if (!fp) {
+			printf("Error: Cannot open file [%s]\n", fn);
+			exit(1);
+  }
+  printf("%s\n", fn);
+  return fp;
+}
+
+void dump(char type, uint32_t timestamp, void *data, int data_size)
+{
+  double cur_time = get_time();
+  FILE *fp;
+  last_timestamp = timestamp;
+  fp = open_dump(type, cur_time, timestamp, data_size, "pgm");
+
+  fprintf(fp, "P5 %d %d 65535\n", FREENECT_FRAME_W, FREENECT_FRAME_H);
+  fwrite(data, data_size, 1, fp);
+
+  fclose(fp);
+}
+
+uint16_t t_gamma[2048];
+void depth_cb(freenect_device *dev, void *v_depth, uint32_t timestamp)
+{
+	int i;
+	uint16_t *depth = (uint16_t*)v_depth;
+
+	dump('d', timestamp, depth, freenect_get_current_depth_mode(dev).bytes);
+
+	pthread_mutex_lock(&gl_backbuf_mutex);
+	for (i=0; i<640*480; i++) {
+		int pval = t_gamma[depth[i]];
+		int lb = pval & 0xff;
+		switch (pval>>8) {
+			case 0:
+				depth_mid[3*i+0] = 255;
+				depth_mid[3*i+1] = 255-lb;
+				depth_mid[3*i+2] = 255-lb;
+				break;
+			case 1:
+				depth_mid[3*i+0] = 255;
+				depth_mid[3*i+1] = lb;
+				depth_mid[3*i+2] = 0;
+				break;
+			case 2:
+				depth_mid[3*i+0] = 255-lb;
+				depth_mid[3*i+1] = 255;
+				depth_mid[3*i+2] = 0;
+				break;
+			case 3:
+				depth_mid[3*i+0] = 0;
+				depth_mid[3*i+1] = 255;
+				depth_mid[3*i+2] = lb;
+				break;
+			case 4:
+				depth_mid[3*i+0] = 0;
+				depth_mid[3*i+1] = 255-lb;
+				depth_mid[3*i+2] = 255;
+				break;
+			case 5:
+				depth_mid[3*i+0] = 0;
+				depth_mid[3*i+1] = 0;
+				depth_mid[3*i+2] = 255-lb;
+				break;
+			default:
+				depth_mid[3*i+0] = 0;
+				depth_mid[3*i+1] = 0;
+				depth_mid[3*i+2] = 0;
+				break;
+		}
+	}
+	got_depth++;
+	pthread_cond_signal(&gl_frame_cond);
+	pthread_mutex_unlock(&gl_backbuf_mutex);
+}
+
+void *freenect_threadfunc(void *arg)
+{
+	freenect_set_depth_callback(f_dev, depth_cb);
+	freenect_set_depth_mode(f_dev, freenect_find_depth_mode(FREENECT_RESOLUTION_MEDIUM, FREENECT_DEPTH_11BIT));
+
+	freenect_start_depth(f_dev);
+
+	printf("'w'-tilt up, 's'-level, 'x'-tilt down, '0'-'6'-select LED mode, 'f'-video format\n");
+
+	while (!die && freenect_process_events(f_ctx) >= 0) {
+	  //printf("\nhere...\n");
+	}
+
+	printf("\nshutting down streams...\n");
+
+	freenect_stop_depth(f_dev);
+
+	freenect_close_device(f_dev);
+	freenect_shutdown(f_ctx);
+
+	printf("-- done!\n");
+	return NULL;
+}
+
+
+void usage()
+{
+  printf("Records the XTION sensor data to a directory\n");
+  printf("  glview_xtion_record <dir>\n");
+  exit(0);
+}
+
+
+int main(int argc, char **argv)
+{
+  if (argc != 2)
+	usage();
+  out_dir = argv[1];
+  mkdir(out_dir, S_IRWXU | S_IRWXG | S_IRWXO);
+  
+  int res;
+
+  depth_mid = (uint8_t*)malloc(640*480*3);
+  depth_front = (uint8_t*)malloc(640*480*3);
+  
+  printf("Kinect camera test\n");
+  
+  int i;
+  for (i=0; i<2048; i++) {
+	float v = i/2048.0;
+	v = powf(v, 3)* 6;
+	t_gamma[i] = v*6*256;
+  }
+
+  g_argc = argc;
+  g_argv = argv;
+  
+  if (freenect_init(&f_ctx, NULL) < 0) {
+	printf("freenect_init() failed\n");
+	return 1;
+  }
+  
+  freenect_set_log_level(f_ctx, FREENECT_LOG_SPEW);
+  freenect_select_subdevices(f_ctx, (freenect_device_flags)(FREENECT_DEVICE_CAMERA));
+  
+  int nr_devices = freenect_num_devices (f_ctx);
+  printf ("Number of devices found: %d\n", nr_devices);
+  
+  int user_device_number = 0;
+  if (argc > 1)
+	user_device_number = atoi(argv[1]);
+  
+  if (nr_devices < 1) {
+	freenect_shutdown(f_ctx);
+	return 1;
+  }
+  
+  if (freenect_open_device(f_ctx, &f_dev, user_device_number) < 0) {
+	printf("Could not open device\n");
+	freenect_shutdown(f_ctx);
+	return 1;
+  }
+  
+  res = pthread_create(&freenect_thread, NULL, freenect_threadfunc, NULL);
+  if (res) {
+	printf("pthread_create failed\n");
+	freenect_shutdown(f_ctx);
+	return 1;
+  }
+  
+  // OS X requires GLUT to run on the main thread
+  gl_threadfunc(NULL);
+  
+  return 0;
+}
+ 
