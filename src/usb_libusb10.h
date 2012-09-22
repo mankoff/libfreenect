@@ -57,7 +57,7 @@
   #define PKTS_PER_XFER 16
   #define NUM_XFERS 16
 #endif
-#define DEPTH_PKTBUF 1920
+#define DEPTH_PKTBUF 1760
 #define VIDEO_PKTBUF 1920
 #endif
 

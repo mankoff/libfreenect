@@ -915,7 +915,7 @@ void PreprocessTransferFreenect(libusb_transfer* transfer, const int read)
 {
 	fnusb_isoc_stream* xferstrm = (fnusb_isoc_stream*)transfer->user_data;
 	freenect_device* dev = xferstrm->parent->parent;
-	packet_stream* pktstrm = (transfer->endpoint == 0x81) ? &dev->video : &dev->depth;
+	packet_stream* pktstrm = (transfer->endpoint == 0x81) ? &dev->depth : &dev->depth;
 
 	// Kinect Camera Frame Packet Header (12 bytes total):
 	struct pkt_hdr

@@ -126,6 +126,9 @@ static int stream_process(freenect_context *ctx, packet_stream *strm, uint8_t *p
 	int got_frame_size = 0;
 
 	// handle lost packets
+#if 0
+	// The Asus Xtion camera does not appear to put sequence numbers on the packets,
+	// so we cannot attempt partial reassembly in this manner.
 	if (strm->seq != hdr->seq) {
 		uint8_t lost = hdr->seq - strm->seq;
 		FN_LOG(l_info, "[Stream %02x] Lost %d packets\n", strm->flag, lost);
@@ -147,6 +150,7 @@ static int stream_process(freenect_context *ctx, packet_stream *strm, uint8_t *p
 			strm->pkt_num += lost;
 		}
 	}
+#endif
 
 	int expected_pkt_size = (strm->pkt_num == strm->pkts_per_frame-1) ? strm->last_pkt_size : strm->pkt_size;
 
@@ -973,11 +977,11 @@ int freenect_start_depth(freenect_device *dev)
 			return -1;
 	}
 
-	res = fnusb_start_iso(&dev->usb_cam, &dev->depth_isoc, depth_process, 0x82, NUM_XFERS, PKTS_PER_XFER, DEPTH_PKTBUF);
+	res = fnusb_start_iso(&dev->usb_cam, &dev->depth_isoc, depth_process, 0x81, NUM_XFERS, PKTS_PER_XFER, DEPTH_PKTBUF);
 	if (res < 0)
 		return res;
 
-	write_register(dev, 0x105, 0x00); // Disable auto-cycle of projector
+	//write_register(dev, 0x105, 0x00); // Disable auto-cycle of projector
 	write_register(dev, 0x06, 0x00); // reset depth stream
 	switch (dev->depth_format) {
 		case FREENECT_DEPTH_11BIT:
@@ -1005,6 +1009,8 @@ int freenect_start_depth(freenect_device *dev)
 int freenect_start_video(freenect_device *dev)
 {
 	freenect_context *ctx = dev->parent;
+	FN_ERROR("freenect_start_video() unsupported on Xtion\n");
+	return -1;
 	int res;
 
 	if (dev->video.running)
@@ -1174,6 +1180,8 @@ int freenect_stop_depth(freenect_device *dev)
 int freenect_stop_video(freenect_device *dev)
 {
 	freenect_context *ctx = dev->parent;
+	FN_ERROR("freenect_stop_video() unsupported on Xtion\n");
+	return -1;
 	int res;
 
 	if (!dev->video.running)
@@ -1337,21 +1345,21 @@ FN_INTERNAL int freenect_camera_init(freenect_device *dev)
 {
 	freenect_context *ctx = dev->parent;
 	int res;
-	res = freenect_fetch_reg_pad_info(dev);
-	if (res < 0) {
-		FN_ERROR("freenect_camera_init(): Failed to fetch registration pad info for device\n");
-		return res;
-	}
-	res = freenect_fetch_zero_plane_info(dev);
-	if (res < 0) {
-		FN_ERROR("freenect_camera_init(): Failed to fetch zero plane info for device\n");
-		return res;
-	}
-	res = freenect_set_video_mode(dev, freenect_find_video_mode(FREENECT_RESOLUTION_MEDIUM, FREENECT_VIDEO_RGB));
+	//res = freenect_fetch_reg_pad_info(dev);
+	//if (res < 0) {
+	//	FN_ERROR("freenect_camera_init(): Failed to fetch registration pad info for device\n");
+	//	return res;
+	//}
+	//res = freenect_fetch_zero_plane_info(dev);
+	//if (res < 0) {
+	//	FN_ERROR("freenect_camera_init(): Failed to fetch zero plane info for device\n");
+	//	return res;
+	//}
+	//res = freenect_set_video_mode(dev, freenect_find_video_mode(FREENECT_RESOLUTION_MEDIUM, FREENECT_VIDEO_RGB));
 	res = freenect_set_depth_mode(dev, freenect_find_depth_mode(FREENECT_RESOLUTION_MEDIUM, FREENECT_DEPTH_11BIT));
-	res = freenect_fetch_reg_const_shift(dev);
+	//res = freenect_fetch_reg_const_shift(dev);
 	if (res < 0) {
-		FN_ERROR("freenect_camera_init(): Failed to fetch const shift for device\n");
+		FN_ERROR("freenect_camera_init(): Failed to set depth mode for device\n");
 		return res;
 	}
 	return 0;
