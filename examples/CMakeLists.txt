@@ -15,6 +15,7 @@ endif()
 
 add_executable(glview glview.c)
 add_executable(glview_xtion_record glview_xtion_record.c)
+add_executable(xtion_register xtion_register.c)
 if(BUILD_AUDIO)
   add_executable(wavrecord wavrecord.c)
   add_executable(micview micview.c)
@@ -25,6 +26,7 @@ if(APPLE)
   set(CMAKE_EXE_LINKER_FLAGS "-framework OpenGL -framework GLUT")
   target_link_libraries(glview freenect)
   target_link_libraries(glview_xtion_record freenect)
+  target_link_libraries(xtion_register freenect)
 # Linux, not so much
 else()
 
@@ -36,10 +38,11 @@ else()
 
   target_link_libraries(glview freenect ${OPENGL_LIBRARIES} ${GLUT_LIBRARY} ${CMAKE_THREAD_LIBS_INIT} ${MATH_LIB})
   target_link_libraries(glview_xtion_record freenect ${OPENGL_LIBRARIES} ${GLUT_LIBRARY} ${CMAKE_THREAD_LIBS_INIT} ${MATH_LIB})
+  target_link_libraries(xtion_register freenect ${CMAKE_THREAD_LIBS_INIT} ${MATH_LIB})
 endif()
 
 
-install (TARGETS glview glview_xtion_record
+install (TARGETS glview glview_xtion_record xtion_register
   DESTINATION bin)
 #install (TARGETS glview
 #  DESTINATION bin)
