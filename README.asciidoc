@@ -1,4 +1,5 @@
-= The Kinect: a low-cost, high-resolution, short-range 3D camera
+
+== The Kinect: a low-cost, high-resolution, short-range 3D camera
 
 This fork of libfreenect from
 https://github.com/OpenKinect/libfreenect is for the above-named paper
