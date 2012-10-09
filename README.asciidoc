@@ -5,7 +5,6 @@ This fork of libfreenect from
 https://github.com/OpenKinect/libfreenect is for the above-named paper
 by Mankoff and Russo (DOI: 10.1002/esp.3332).
 
-[source,bash]
 ----
 git clone git@github.com:mankoff/libfreenect.git
 cd libfreenect
