@@ -1,3 +1,18 @@
+= The Kinect: a low-cost, high-resolution, short-range 3D camera
+
+This fork of libfreenect from
+https://github.com/OpenKinect/libfreenect is for the above-named paper
+by Mankoff and Russo (DOI: 10.1002/esp.3332).
+
+git clone git@github.com:mankoff/libfreenect.git
+cd libfreenect
+git checkout offline_register
+mkdir build
+cd build
+cmake ..
+make
+make install
+
 == libfreenect
 
 Ongoing Development and Maintenance by the OpenKinect Community
