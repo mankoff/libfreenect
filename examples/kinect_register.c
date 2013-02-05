@@ -283,9 +283,9 @@ void write_PLY(char *outfile, double* x, double* y, uint16_t* z, uint8_t* rgb)
   fprintf(fp, "property float y\n");
   fprintf(fp, "property float z\n");
   if (rgb != 0) {
-	fprintf(fp, "property float r\n");
-	fprintf(fp, "property float g\n");
-	fprintf(fp, "property float b\n");
+	fprintf(fp, "property int red\n");
+	fprintf(fp, "property int green\n");
+	fprintf(fp, "property int blue\n");
   }
   //fprintf(fp, "property list uchar int vertex_index\n");
   fprintf(fp, "end_header\n");
