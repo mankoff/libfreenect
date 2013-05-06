@@ -35,7 +35,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
-#include <libfreenect/libfreenect-registration.h>
+#include <libfreenect-registration.h>
 
 #define DEPTH_MAX_METRIC_VALUE 10000
 #define DEPTH_MAX_RAW_VALUE 2048
